@@ -50,12 +50,81 @@
     padding: 8px 8px 12px;
     box-shadow: 0 2px 8px rgba(15,43,91,0.25);
   }
-  .days {
+  .days-row {
     max-width: 640px; margin: 0 auto;
+    display: flex; align-items: stretch; gap: 6px;
+  }
+  .days {
+    flex: 1; min-width: 0;
     display: flex; gap: 6px; overflow-x: auto;
     scrollbar-width: none;
   }
   .days::-webkit-scrollbar { display: none; }
+  /* 달력 열기 버튼 (요일 탭 왼쪽) */
+  .cal-btn {
+    flex: 0 0 auto; width: 40px;
+    border: none; border-radius: 10px;
+    background: rgba(255,255,255,0.12); color: #fff;
+    font-size: 18px; cursor: pointer;
+  }
+  .cal-btn:hover { background: rgba(255,255,255,0.22); }
+  /* 오늘로 돌아가기 */
+  .back-today {
+    display: block; margin: 8px auto 0;
+    border: 1px solid rgba(255,255,255,0.4); border-radius: 999px;
+    background: rgba(255,255,255,0.1); color: #fff;
+    padding: 5px 14px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .back-today[hidden] { display: none; }
+
+  /* ── 달력 팝업 ── */
+  .cal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(15,20,35,0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .cal-overlay[hidden] { display: none; }
+  .cal-modal {
+    width: 100%; max-width: 340px;
+    background: var(--card); border-radius: 16px;
+    padding: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .cal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .cal-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .cal-nav {
+    width: 36px; height: 36px; border: none; border-radius: 10px;
+    background: var(--navy-soft); color: var(--navy);
+    font-size: 20px; cursor: pointer;
+  }
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+    min-height: 200px;
+  }
+  .cal-dow {
+    text-align: center; font-size: 11px; color: var(--sub);
+    padding: 4px 0; font-weight: 700;
+  }
+  .cal-cell {
+    aspect-ratio: 1; border: none; border-radius: 8px;
+    background: none; font-family: inherit; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cal-cell.empty { background: none; }
+  .cal-cell.has {
+    background: var(--navy-soft); color: var(--navy);
+    font-weight: 700; cursor: pointer;
+  }
+  .cal-cell.has:hover { background: #d7e1f3; }
+  .cal-cell.nodata { color: var(--line); cursor: default; }
+  .cal-cell.sel { background: var(--navy); color: #fff; }
+  .cal-loading {
+    grid-column: 1 / -1; text-align: center;
+    color: var(--sub); font-size: 13px; padding: 40px 0;
+  }
   .day {
     flex: 1 0 auto; min-width: 74px;
     border: none; border-radius: 10px;
@@ -225,9 +294,24 @@
 </header>
 
 <nav>
-  <div class="days" id="days"></div>
+  <div class="days-row">
+    <button id="calBtn" class="cal-btn" aria-label="달력에서 날짜 선택">📅</button>
+    <div class="days" id="days"></div>
+  </div>
   <div class="rests" id="rests"></div>
+  <button id="backToday" class="back-today" hidden>← 오늘로 돌아가기</button>
 </nav>
+
+<div id="calOverlay" class="cal-overlay" hidden>
+  <div class="cal-modal" role="dialog" aria-label="날짜 선택">
+    <div class="cal-head">
+      <button class="cal-nav" id="calPrev" aria-label="이전 달">‹</button>
+      <div class="cal-title" id="calTitle"></div>
+      <button class="cal-nav" id="calNext" aria-label="다음 달">›</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+</div>
 
 <main id="main"><div class="empty">메뉴를 불러오는 중이에요…</div></main>
 
@@ -246,7 +330,14 @@ let CAL = null;                  // calories.json (키워드→[min,max])
 let calOn = false;              // kcal 토글 상태
 let selectedDate = null;
 let selectedRestaurant = null;  // 선택된 식당 base 이름
-let DATE_SET = new Set();        // 데이터가 존재하는 날짜 집합
+let DATE_SET = new Set();        // 데이터가 존재하는 날짜 집합 (menus.json 기준)
+
+// 과거 탐색용 상태
+const archiveCache = {};         // "YYYY-MM" -> restaurants(list) (지연 로딩)
+let pastMode = false;            // 과거 날짜 보기 여부
+let calYm = null;                // 달력에 표시 중인 달 "YYYY-MM"
+let normalDates = [];            // 정상(최근 3주) 날짜 탭 목록
+let normalDefaultDate = null;    // 정상 모드 기본 선택 날짜(오늘 등)
 
 const KCAL_KEY = "kmu-kcal-on";           // kcal 토글 저장
 const KCAL_NOTICE_KEY = "kmu-kcal-notice"; // 최초 안내 표시 여부
@@ -350,8 +441,38 @@ function isWeekend(dateISO) {
 }
 // 해당 날짜에 어떤 식당이든 메뉴가 있으면 true
 function dateHasAnyData(dateISO) {
-  return DATA.restaurants.some(r =>
+  return restaurantsForDate(dateISO).some(r =>
     r.menus.some(m => m.date === dateISO && m.items.length));
+}
+
+// ── 월별 아카이브 지연 로딩 ──
+// 해당 월 archive를 (캐시에 없으면) 불러온다. 첫 페이지 로딩은 menus.json만 쓰고,
+// 달력을 열거나 과거로 이동할 때만 archive/YYYY-MM.json을 가져온다.
+function loadMonth(ym) {
+  if (archiveCache[ym] !== undefined) return Promise.resolve(archiveCache[ym]);
+  return fetch(`archive/${ym}.json`)
+    .then(res => res.ok ? res.json() : null)
+    .then(j => { archiveCache[ym] = (j && j.restaurants) ? j.restaurants : []; return archiveCache[ym]; })
+    .catch(() => { archiveCache[ym] = []; return archiveCache[ym]; });
+}
+// 특정 날짜의 메뉴를 담은 restaurants 목록: 그 달 archive가 로딩됐으면 그걸, 아니면 menus.json
+function restaurantsForDate(dateISO) {
+  const arch = archiveCache[dateISO.slice(0, 7)];
+  return (arch && arch.length) ? arch : DATA.restaurants;
+}
+// 특정 월에서 데이터가 있는 날짜 Set (달력 진하게 표시용)
+function datesForMonth(ym) {
+  const src = (archiveCache[ym] && archiveCache[ym].length) ? archiveCache[ym] : DATA.restaurants;
+  const set = new Set();
+  src.forEach(r => r.menus.forEach(m => {
+    if (m.date.slice(0, 7) === ym && m.items.length) set.add(m.date);
+  }));
+  return set;
+}
+function shiftMonth(ym, delta) {
+  let [y, m] = ym.split("-").map(Number);
+  m += delta; y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1;
+  return `${y}-${String(m).padStart(2, "0")}`;
 }
 
 Promise.all([
@@ -409,31 +530,11 @@ function init() {
   document.getElementById("updated").textContent =
     `업데이트 ${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
 
-  // 요일 탭 만들기
-  const daysEl = document.getElementById("days");
-  daysEl.innerHTML = dates.map(d => {
-    const dt = new Date(d + "T00:00:00");
-    const isToday = d === today;
-    const isPast = d < today;  // 지난 날짜는 흐리게 표시
-    const isOff = isWeekend(d) && !DATE_SET.has(d);  // 데이터 없는 주말 = 휴무
-    return `<button class="day ${d === selectedDate ? "active" : ""} ${isToday ? "today-mark" : ""} ${isPast ? "past" : ""} ${isOff ? "off" : ""}"
-              data-date="${d}">
-              <b>${WEEKDAYS[dt.getDay()]}</b>${dt.getMonth() + 1}/${dt.getDate()}
-              ${isOff ? `<em class="off-label">휴무</em>` : ""}
-            </button>`;
-  }).join("");
-
-  daysEl.querySelectorAll(".day").forEach(btn => {
-    btn.addEventListener("click", () => {
-      selectedDate = btn.dataset.date;
-      daysEl.querySelectorAll(".day").forEach(b => b.classList.toggle("active", b === btn));
-      render();
-    });
-  });
-
-  // 열 때 선택된(오늘) 탭이 가로 스크롤의 가운데 오도록 이동
-  // (scrollIntoView는 sticky nav/오프셋부모 영향이 있어, rect로 직접 계산)
-  centerScroll(daysEl, activeBtnOf(daysEl));
+  // 정상(최근 3주) 날짜 탭
+  normalDates = dates;
+  normalDefaultDate = selectedDate;
+  buildDayTabs(dates, DATE_SET);
+  setupCalendar();
 
   // 식당 탭 초기화
   const ordered = orderedRestaurants();
@@ -473,6 +574,115 @@ function centerScroll(container, target) {
   const bRect = target.getBoundingClientRect();
   const delta = (bRect.left - cRect.left) - (container.clientWidth - bRect.width) / 2;
   container.scrollLeft += delta;
+}
+
+// 날짜 탭을 그린다. dates=표시할 날짜 배열, dataDates=데이터 있는 날짜 Set
+function buildDayTabs(dates, dataDates) {
+  const today = new Date().toLocaleDateString("sv-SE");
+  const daysEl = document.getElementById("days");
+  daysEl.innerHTML = dates.map(d => {
+    const dt = new Date(d + "T00:00:00");
+    const isToday = d === today;
+    const isPast = d < today;                            // 지난 날짜는 흐리게
+    const isOff = isWeekend(d) && !dataDates.has(d);      // 데이터 없는 주말 = 휴무
+    return `<button class="day ${d === selectedDate ? "active" : ""} ${isToday ? "today-mark" : ""} ${isPast ? "past" : ""} ${isOff ? "off" : ""}"
+              data-date="${d}">
+              <b>${WEEKDAYS[dt.getDay()]}</b>${dt.getMonth() + 1}/${dt.getDate()}
+              ${isOff ? `<em class="off-label">휴무</em>` : ""}
+            </button>`;
+  }).join("");
+  daysEl.querySelectorAll(".day").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedDate = btn.dataset.date;
+      daysEl.querySelectorAll(".day").forEach(b => b.classList.toggle("active", b === btn));
+      render();
+    });
+  });
+  centerScroll(daysEl, activeBtnOf(daysEl));
+}
+
+/* ────────────────────────────────────────────────
+   과거 탐색: 달력 팝업 + 과거 모드
+──────────────────────────────────────────────── */
+function setupCalendar() {
+  document.getElementById("calBtn").addEventListener("click", () => openCalendar(selectedDate.slice(0, 7)));
+  document.getElementById("calPrev").addEventListener("click", () => { calYm = shiftMonth(calYm, -1); renderCalendar(); });
+  document.getElementById("calNext").addEventListener("click", () => { calYm = shiftMonth(calYm, 1); renderCalendar(); });
+  document.getElementById("backToday").addEventListener("click", backToToday);
+  // 배경(오버레이) 클릭 시 닫기
+  const ov = document.getElementById("calOverlay");
+  ov.addEventListener("click", e => { if (e.target === ov) closeCalendar(); });
+}
+
+function openCalendar(ym) {
+  calYm = ym;
+  document.getElementById("calOverlay").hidden = false;
+  renderCalendar();
+}
+function closeCalendar() { document.getElementById("calOverlay").hidden = true; }
+
+function renderCalendar() {
+  const grid = document.getElementById("calGrid");
+  const [y, m] = calYm.split("-").map(Number);
+  document.getElementById("calTitle").textContent = `${y}년 ${m}월`;
+  grid.innerHTML = `<div class="cal-loading">불러오는 중…</div>`;
+  // 해당 월 archive를 지연 로딩한 뒤 그린다
+  loadMonth(calYm).then(() => {
+    if (document.getElementById("calOverlay").hidden) return;  // 이미 닫혔으면 무시
+    const dataDates = datesForMonth(calYm);
+    const firstDow = new Date(y, m - 1, 1).getDay();       // 1일의 요일(0=일)
+    const daysInMonth = new Date(y, m, 0).getDate();
+    let cells = WEEKDAYS.map(w => `<div class="cal-dow">${w}</div>`).join("");
+    for (let i = 0; i < firstDow; i++) cells += `<div class="cal-cell empty"></div>`;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = `${calYm}-${String(day).padStart(2, "0")}`;
+      const has = dataDates.has(d);
+      const sel = d === selectedDate;
+      cells += `<button class="cal-cell ${has ? "has" : "nodata"} ${sel ? "sel" : ""}"
+                  ${has ? `data-date="${d}"` : "disabled"}>${day}</button>`;
+    }
+    grid.innerHTML = cells;
+    grid.querySelectorAll(".cal-cell.has").forEach(c =>
+      c.addEventListener("click", () => selectFromCalendar(c.dataset.date)));
+  });
+}
+
+// 달력에서 날짜를 고르면: 정상 범위 안이면 그냥 선택, 밖(과거)이면 과거 모드로
+function selectFromCalendar(dateISO) {
+  closeCalendar();
+  if (normalDates.includes(dateISO)) {
+    pastMode = false;
+    selectedDate = dateISO;
+    document.getElementById("backToday").hidden = true;
+    buildDayTabs(normalDates, DATE_SET);
+    render();
+  } else {
+    enterPastMode(dateISO);
+  }
+}
+
+// 과거 날짜로 이동: 그 달 데이터를 불러와 날짜 탭을 그 달로 바꾸고 '오늘로 돌아가기' 표시
+function enterPastMode(dateISO) {
+  const ym = dateISO.slice(0, 7);
+  loadMonth(ym).then(() => {
+    pastMode = true;
+    selectedDate = dateISO;
+    const [y, m] = ym.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const dates = [];
+    for (let day = 1; day <= daysInMonth; day++) dates.push(`${ym}-${String(day).padStart(2, "0")}`);
+    buildDayTabs(dates, datesForMonth(ym));
+    document.getElementById("backToday").hidden = false;
+    render();
+  });
+}
+
+function backToToday() {
+  pastMode = false;
+  selectedDate = normalDefaultDate;
+  document.getElementById("backToday").hidden = true;
+  buildDayTabs(normalDates, DATE_SET);
+  render();
 }
 
 /* ────────────────────────────────────────────────
@@ -555,9 +765,9 @@ function render() {
     return;
   }
 
-  // 선택된 식당 하나만 표시
-  const r = DATA.restaurants.find(x => baseName(x.name) === selectedRestaurant)
-    || DATA.restaurants[0];
+  // 선택된 식당 하나만 표시 (과거 날짜면 그 달 archive에서)
+  const src = restaurantsForDate(selectedDate);
+  const r = src.find(x => baseName(x.name) === selectedRestaurant) || src[0];
 
   const match = r.name.match(/^(.*?)\((.*)\)$/);
   const name = match ? match[1] : r.name;
