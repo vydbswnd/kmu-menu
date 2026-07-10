@@ -376,7 +376,6 @@ const KCAL_KEY = "kmu-kcal-on";           // kcal 토글 저장
 const KCAL_NOTICE_KEY = "kmu-kcal-notice"; // 최초 안내 표시 여부
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const MAX_TAB_DAYS = 21;  // 탭에 노출할 최근 기간(약 3주)
 
 // 운영시간 표시 스위치. 정확한 운영시간이 확정되기 전까지 꺼둠.
 // (hours 데이터 수집·저장과 판정 코드는 그대로 두고, 화면 표시만 비활성)
@@ -615,28 +614,17 @@ function init() {
     r.menus.forEach(m => dateSet.add(m.date))
   );
   DATE_SET = dateSet;  // render()에서 '데이터 없는 날' 판별에 사용
-  const allDates = [...dateSet].sort();
 
   // 오늘 날짜 (KST 기준, 접속자 tz 무관)
   const today = kstTodayISO();
 
-  // 데이터 최소~최대(+오늘)까지 빈 날 없이 연속 달력으로 채움 (미래 포함)
-  const lower = allDates.length ? allDates[0] : today;
-  const dataMax = allDates.length ? allDates[allDates.length - 1] : today;
-  // 탭 끝 = '데이터 최대 날짜'와 '다가오는 일요일' 중 더 나중
-  // (주가 일요일 시작이라, 어느 요일에 봐도 눈앞의 토/일 휴무 탭이 보이게)
-  // 다가오는 일요일 = 오늘이 일요일이면 오늘, 아니면 오늘 이후 첫 일요일
+  // 날짜 탭은 '이번 주(일~토)'만 노출한다. 과거 날짜 탐색은 서랍의 달력으로만.
   const dow = dowOf(today);                                    // 0=일 … 6=토
-  const sunMs = Date.parse(today + "T00:00:00Z") + ((7 - dow) % 7) * 86400000;
-  const upcomingSunday = new Date(sunMs).toISOString().slice(0, 10);
-  const upper = dataMax >= upcomingSunday ? dataMax : upcomingSunday;
-  const full = continuousDates(lower, upper);
-
-  // 과거가 쌓여도 탭이 길어지지 않게 최근 약 3주치만 노출 (미래는 유지)
-  const cutoffISO = new Date(Date.parse(today + "T00:00:00Z") - MAX_TAB_DAYS * 86400000)
-    .toISOString().slice(0, 10);
-  let dates = full.filter(d => d >= cutoffISO);
-  if (!dates.length) dates = full.slice(-MAX_TAB_DAYS);
+  const weekStart = new Date(Date.parse(today + "T00:00:00Z") - dow * 86400000)
+    .toISOString().slice(0, 10);                               // 이번 주 일요일
+  const weekEnd = new Date(Date.parse(weekStart + "T00:00:00Z") + 6 * 86400000)
+    .toISOString().slice(0, 10);                               // 이번 주 토요일
+  const dates = continuousDates(weekStart, weekEnd);
 
   // 기본 선택: 오늘이 있으면 오늘, 없으면 가장 최근 날짜
   selectedDate = dates.includes(today) ? today : dates[dates.length - 1];
