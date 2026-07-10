@@ -56,10 +56,14 @@ The crawler always hits the live university URL — there is no offline fixture.
 - 월별 아카이브 + 과거 탐색
 - 날짜 탭 월요일 시작, 햄버거 서랍 메뉴, 운영시간 표시 보류(SHOW_HOURS=false)
 - GoatCounter 연동 (익명 방문 통계, 비공개 · 화면 표시 없음)
+  - 계정 생성·이메일 인증 완료, 대시보드: kmu-menu.goatcounter.com
+  - 주간 이메일 리포트 설정됨 (매주 발송 → vydbswnd0729@naver.com)
+  - 대시보드 시간대 Asia/Seoul 확인, 첫 방문 기록 확인 (2026-07-11)
+  - 방문자 수는 사이트에 비공개 (대시보드로만 확인)
 ### 다음 순서
-1. 공유 기능
+1. 공유 기능 (오늘 메뉴 복사 / 카톡 공유)
 2. 디자인 다듬기 + 이스터에그 (콘솔 서명, 로고 연타 크레딧, 치킨 반응)
-3. 개강 홍보
+3. 개강 홍보 (도메인 구매 검토 포함)
 4. 웹 푸시 (Supabase)
 ### 조건부 / 보류
 - 시험기간 주말: 10월 중간고사 때 실제 운영 확인 후 크롤러 주말 허용 + 문구 확정
