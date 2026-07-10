@@ -203,6 +203,26 @@ def parse_cell(lines: list, default_meal, hours_sink=None):
     return results
 
 
+def keep_weekend_blocks(blocks, cells, dates, date_to_idx, idx, default_meal) -> bool:
+    """주말 셀의 메뉴 blocks를 유지할지 판단.
+    - 빈 셀이거나 가격 있는 실제 메뉴가 아니면 버림 (공지/파편 방지)
+    - 인접 평일(토→금, 일→월) 셀과 완전히 동일하면 복붙으로 보고 버림
+    - 그 외(가격 있고 인접 평일과 다른 '실제 주말 메뉴')면 유지
+    """
+    if not blocks:
+        return False
+    if not any(i.get("price") for b in blocks for i in b["items"]):
+        return False  # 가격 있는 항목이 하나도 없으면 실제 메뉴로 보지 않음
+    wd = date.fromisoformat(dates[idx]).weekday()  # 5=토, 6=일
+    adj_date = (date.fromisoformat(dates[idx]) + timedelta(days=1 if wd == 6 else -1)).isoformat()
+    ai = date_to_idx.get(adj_date)
+    if ai is not None and ai < len(cells):
+        adj_blocks = parse_cell(split_cell_lines(cells[ai]), default_meal)
+        if blocks == adj_blocks:
+            return False  # 인접 평일과 동일 = 주간 메뉴 복붙
+    return True
+
+
 def parse_table(table) -> dict:
     caption = table.find("caption")
     name = restaurant_name_from_caption(caption.get_text(strip=True)) if caption else "이름미상"
@@ -213,6 +233,7 @@ def parse_table(table) -> dict:
     for cell in header_cells:
         m = DATE_PAT.search(cell.get_text())
         dates.append(f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None)
+    date_to_idx = {d: i for i, d in enumerate(dates) if d}
 
     menus = []
     hours_raw = []
@@ -233,13 +254,18 @@ def parse_table(table) -> dict:
             for ln in lines:
                 if HOURS_PAT.search(ln):
                     hours_raw.append(ln)
-            # 주말(토/일) 데이터는 메뉴에서 버림 — 교내 식당은 주말 휴무인데
-            # 원본 페이지가 주간 메뉴를 주말 칸에도 복붙해두기 때문.
-            # 단, 생활관식당(기숙사)은 주말에도 운영하므로 예외.
+
+            blocks = parse_cell(lines, default_meal)
+
+            # 주말(토/일) 처리: 원본 페이지가 주간 메뉴를 주말 칸에 복붙해두는 경우가 많아
+            # 기본은 버리되, '실제 주말 메뉴'(가격 있고 인접 평일과 다름)면 살린다.
+            # (예: 학생식당 방학 중 주말운영). 생활관식당은 주말에도 운영하므로 항상 유지.
             weekday = date.fromisoformat(dates[idx]).weekday()  # 5=토, 6=일
             if weekday >= 5 and "생활관" not in name:
-                continue
-            for block in parse_cell(lines, default_meal):
+                if not keep_weekend_blocks(blocks, cells, dates, date_to_idx, idx, default_meal):
+                    continue
+
+            for block in blocks:
                 menus.append({
                     "date": dates[idx],
                     "corner": corner,
