@@ -69,6 +69,22 @@
   .day.today-mark b::after { content: " ·오늘"; font-size: 10px; color: #d97706; }
   .day.active.today-mark b::after { color: #b45309; }
 
+  /* ── 식당 탭 (칩) ── */
+  .rests {
+    max-width: 640px; margin: 8px auto 0;
+    display: flex; gap: 6px; overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .rests::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto; border: none; border-radius: 999px;
+    background: rgba(255,255,255,0.12); color: #fff;
+    padding: 7px 14px; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    white-space: nowrap; line-height: 1.2;
+  }
+  .chip.active { background: #ffd66b; color: var(--navy); }
+
   /* ── 본문 ── */
   main { max-width: 640px; margin: 0 auto; padding: 16px 12px 60px; }
 
@@ -77,10 +93,9 @@
     border: 1px solid var(--line);
     margin-bottom: 14px; overflow: hidden;
   }
-  .restaurant > button.head {
-    width: 100%; border: none; background: none; cursor: pointer;
+  .restaurant .head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 15px 16px; font-family: inherit; text-align: left;
+    padding: 15px 16px;
   }
   .restaurant .name { font-size: 17px; font-weight: 700; }
   .restaurant .loc { font-size: 12px; color: var(--sub); margin-top: 2px; }
@@ -143,7 +158,10 @@
   </div>
 </header>
 
-<nav><div class="days" id="days"></div></nav>
+<nav>
+  <div class="days" id="days"></div>
+  <div class="rests" id="rests"></div>
+</nav>
 
 <main id="main"><div class="empty">메뉴를 불러오는 중이에요…</div></main>
 
@@ -159,9 +177,39 @@
 ──────────────────────────────────────────────── */
 let DATA = null;
 let selectedDate = null;
+let selectedRestaurant = null;  // 선택된 식당 base 이름
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_TAB_DAYS = 21;  // 탭에 노출할 최근 기간(약 3주)
+
+// 식당 표시 순서(이용자 많은 순). 목록에 없는 식당은 맨 뒤로.
+const RESTAURANT_ORDER = ["학생식당", "한울식당", "교직원식당", "청향 한식당", "청향 양식당", "K-Bob+"];
+const LS_KEY = "kmu-last-restaurant";  // 마지막으로 본 식당 저장
+
+// "한울식당(법학관 지하1층)" → "한울식당"
+function baseName(fullName) {
+  const m = fullName.match(/^(.*?)\s*\(/);
+  return (m ? m[1] : fullName).trim();
+}
+
+// 고정 순서대로 정렬된 식당 목록
+function orderedRestaurants() {
+  const rank = n => {
+    const i = RESTAURANT_ORDER.indexOf(baseName(n));
+    return i < 0 ? RESTAURANT_ORDER.length : i;  // 목록에 없으면 맨 뒤
+  };
+  return DATA.restaurants
+    .map((r, i) => [r, i])
+    .sort((a, b) => rank(a[0].name) - rank(b[0].name) || a[1] - b[1])
+    .map(pair => pair[0]);
+}
+
+function saveLastRestaurant(name) {
+  try { localStorage.setItem(LS_KEY, name); } catch (e) {}
+}
+function readLastRestaurant() {
+  try { return localStorage.getItem(LS_KEY); } catch (e) { return null; }
+}
 
 fetch("menus.json")
   .then(res => res.json())
@@ -223,15 +271,43 @@ function init() {
 
   // 열 때 선택된(오늘) 탭이 가로 스크롤의 가운데 오도록 이동
   // (scrollIntoView는 sticky nav/오프셋부모 영향이 있어, rect로 직접 계산)
-  const activeBtn = daysEl.querySelector(".day.active");
-  if (activeBtn) {
-    const cRect = daysEl.getBoundingClientRect();
-    const bRect = activeBtn.getBoundingClientRect();
-    const delta = (bRect.left - cRect.left) - (daysEl.clientWidth - bRect.width) / 2;
-    daysEl.scrollLeft += delta;
-  }
+  centerScroll(daysEl, activeBtnOf(daysEl));
+
+  // 식당 탭 초기화
+  const ordered = orderedRestaurants();
+  const names = ordered.map(r => baseName(r.name));
+  const saved = readLastRestaurant();
+  // 저장된 식당이 현재 데이터에 있으면 그걸, 아니면 학생식당(없으면 첫 번째)
+  selectedRestaurant = (saved && names.includes(saved)) ? saved
+    : (names.includes("학생식당") ? "학생식당" : names[0]);
+
+  const restsEl = document.getElementById("rests");
+  restsEl.innerHTML = ordered.map(r => {
+    const n = baseName(r.name);
+    return `<button class="chip ${n === selectedRestaurant ? "active" : ""}" data-rest="${n}">${n}</button>`;
+  }).join("");
+
+  restsEl.querySelectorAll(".chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedRestaurant = btn.dataset.rest;
+      saveLastRestaurant(selectedRestaurant);
+      restsEl.querySelectorAll(".chip").forEach(b => b.classList.toggle("active", b === btn));
+      render();
+    });
+  });
+  centerScroll(restsEl, restsEl.querySelector(".chip.active"));
 
   render();
+}
+
+// 가로 스크롤 컨테이너에서 대상 버튼을 가운데로 이동
+function activeBtnOf(container) { return container.querySelector(".active"); }
+function centerScroll(container, target) {
+  if (!target) return;
+  const cRect = container.getBoundingClientRect();
+  const bRect = target.getBoundingClientRect();
+  const delta = (bRect.left - cRect.left) - (container.clientWidth - bRect.width) / 2;
+  container.scrollLeft += delta;
 }
 
 /* ────────────────────────────────────────────────
@@ -248,54 +324,55 @@ function nextMeal() {
 /* ────────────────────────────────────────────────
    4) 화면 그리기: 선택된 날짜의 식당 카드들
 ──────────────────────────────────────────────── */
+// 코너 블록 하나를 HTML로
+function cornerHtml(m, highlight) {
+  const mealBadge = m.meal
+    ? `<span class="meal ${m.meal.replace("/", "")} ${m.meal === highlight ? "next" : ""}">${m.meal}</span>`
+    : "";
+  const itemsHtml = m.items.map(i => `
+    <div class="item">
+      <span class="menu-name">${i.name}</span>
+      ${i.price ? `<span class="price">${i.price.toLocaleString()}원</span>` : ""}
+    </div>`).join("");
+  return `
+    <div class="corner">
+      <div class="corner-head">
+        <span class="corner-name">${m.corner}</span>${mealBadge}
+      </div>
+      ${itemsHtml}
+    </div>`;
+}
+
 function render() {
   const main = document.getElementById("main");
   const isToday = selectedDate === new Date().toLocaleDateString("sv-SE");
   const highlight = isToday ? nextMeal() : null;
 
-  const cards = DATA.restaurants.map(r => {
-    // 이 식당의 선택 날짜 메뉴만 골라냄
-    const menus = r.menus.filter(m => m.date === selectedDate && m.items.length);
-    if (!menus.length) return "";
+  // 선택된 식당 하나만 표시
+  const r = DATA.restaurants.find(x => baseName(x.name) === selectedRestaurant)
+    || DATA.restaurants[0];
 
-    // 식당 이름에서 위치 분리: "한울식당(법학관 지하1층)" → 이름 + 위치
-    const match = r.name.match(/^(.*?)\((.*)\)$/);
-    const name = match ? match[1] : r.name;
-    const loc = match ? match[2] : "";
+  const match = r.name.match(/^(.*?)\((.*)\)$/);
+  const name = match ? match[1] : r.name;
+  const loc = match ? match[2] : "";
 
-    const cornersHtml = menus.map(m => {
-      const mealBadge = m.meal
-        ? `<span class="meal ${m.meal.replace("/", "")} ${m.meal === highlight ? "next" : ""}">${m.meal}</span>`
-        : "";
-      const itemsHtml = m.items.map(i => `
-        <div class="item">
-          <span class="menu-name">${i.name}</span>
-          ${i.price ? `<span class="price">${i.price.toLocaleString()}원</span>` : ""}
-        </div>`).join("");
-      return `
-        <div class="corner">
-          <div class="corner-head">
-            <span class="corner-name">${m.corner}</span>${mealBadge}
-          </div>
-          ${itemsHtml}
-        </div>`;
-    }).join("");
+  const menus = r.menus.filter(m => m.date === selectedDate && m.items.length);
 
-    return `
-      <section class="restaurant">
-        <button class="head" onclick="this.parentElement.classList.toggle('closed')">
-          <span>
-            <div class="name">${name}</div>
-            ${loc ? `<div class="loc">📍 ${loc}</div>` : ""}
-          </span>
-          <span class="count">${menus.length}개 코너</span>
-        </button>
-        <div class="body">${cornersHtml}</div>
-      </section>`;
-  }).join("");
+  const body = menus.length
+    ? menus.map(m => cornerHtml(m, highlight)).join("")
+    : `<div class="empty">이 날짜에는 ${name} 메뉴가 없어요.<br>주말이거나 휴점일 수 있어요 🌙</div>`;
 
-  main.innerHTML = cards ||
-    '<div class="empty">이 날짜에는 등록된 메뉴가 없어요.<br>주말이거나 방학 휴점일 수 있어요 🌙</div>';
+  main.innerHTML = `
+    <section class="restaurant">
+      <div class="head">
+        <span>
+          <div class="name">${name}</div>
+          ${loc ? `<div class="loc">📍 ${loc}</div>` : ""}
+        </span>
+        ${menus.length ? `<span class="count">${menus.length}개 코너</span>` : ""}
+      </div>
+      <div class="body">${body}</div>
+    </section>`;
 }
 </script>
 </body>
