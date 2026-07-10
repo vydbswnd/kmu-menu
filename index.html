@@ -378,6 +378,11 @@ const KCAL_NOTICE_KEY = "kmu-kcal-notice"; // 최초 안내 표시 여부
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_TAB_DAYS = 21;  // 탭에 노출할 최근 기간(약 3주)
 
+// 운영시간 표시 스위치. 정확한 운영시간이 확정되기 전까지 꺼둠.
+// (hours 데이터 수집·저장과 판정 코드는 그대로 두고, 화면 표시만 비활성)
+// 다시 켜려면 true 로: 운영시간 텍스트 / '지금 운영 중' 배지 / 칩 초록 점이 함께 살아남.
+const SHOW_HOURS = false;
+
 // 식당 표시 순서(이용자 많은 순). 목록에 없는 식당은 맨 뒤로.
 const RESTAURANT_ORDER = ["학생식당", "한울식당", "교직원식당", "청향 한식당", "청향 양식당", "K-Bob+"];
 const LS_KEY = "kmu-last-restaurant";  // 마지막으로 본 식당 저장
@@ -658,7 +663,7 @@ function init() {
   const restsEl = document.getElementById("rests");
   restsEl.innerHTML = ordered.map(r => {
     const n = baseName(r.name);
-    const dot = isOpenNow(r) === true ? `<span class="chip-dot" title="운영 중"></span>` : "";
+    const dot = (SHOW_HOURS && isOpenNow(r) === true) ? `<span class="chip-dot" title="운영 중"></span>` : "";
     return `<button class="chip ${n === selectedRestaurant ? "active" : ""}" data-rest="${n}">${n}${dot}</button>`;
   }).join("");
 
@@ -907,9 +912,9 @@ function render() {
   if (countText) subParts.push(countText);
   const sub = subParts.join(" · ");
 
-  // 운영시간 + '지금 운영 중' 배지 (hours가 있을 때만)
-  const openBadge = isOpenNow(r) === true ? `<span class="open-badge">지금 운영 중</span>` : "";
-  const hoursHtml = renderHours(r.hours);
+  // 운영시간 + '지금 운영 중' 배지 (SHOW_HOURS 켜졌을 때만 표시)
+  const openBadge = (SHOW_HOURS && isOpenNow(r) === true) ? `<span class="open-badge">지금 운영 중</span>` : "";
+  const hoursHtml = SHOW_HOURS ? renderHours(r.hours) : "";
 
   main.innerHTML = `
     <section class="restaurant">
