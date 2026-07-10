@@ -108,6 +108,15 @@
 
   .corner { padding: 12px 0; }
   .corner + .corner { border-top: 1px dashed var(--line); }
+
+  /* 상시(고정) 메뉴 구분 라벨 */
+  .section-label {
+    font-size: 11px; font-weight: 700; color: var(--sub);
+    letter-spacing: 0.4px;
+    margin-top: 6px; padding: 12px 0 2px;
+    border-top: 1px solid var(--line);
+  }
+  .section-label::before { content: "🕒 "; }
   .corner-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .corner-name { font-size: 13px; font-weight: 700; color: var(--sub); }
   .meal {
@@ -343,6 +352,31 @@ function cornerHtml(m, highlight) {
     </div>`;
 }
 
+// 코너별로 '변동(매일 바뀜)' vs '고정(상시)'을 최근 평일 데이터로 판별
+function classifyCorners(restaurant) {
+  // 최근 평일(월~금) 최대 10일치만 사용
+  const dates = [...new Set(restaurant.menus.map(m => m.date))]
+    .filter(d => { const wd = new Date(d + "T00:00:00").getDay(); return wd >= 1 && wd <= 5; })
+    .sort().slice(-10);
+  const dateSet = new Set(dates);
+
+  const sig = {};  // corner -> { date -> items 시그니처 }
+  restaurant.menus.forEach(m => {
+    if (!dateSet.has(m.date)) return;
+    sig[m.corner] = sig[m.corner] || {};
+    sig[m.corner][m.date] = (sig[m.corner][m.date] || "")
+      + m.items.map(i => i.name + ":" + i.price).join("|") + "#";
+  });
+
+  const cls = {};
+  for (const corner in sig) {
+    const vals = Object.values(sig[corner]);
+    // 평일 2일 이상 관측되고 매일 동일하면 '고정(상시)', 아니면 '변동'
+    cls[corner] = (vals.length >= 2 && new Set(vals).size === 1) ? "fixed" : "varying";
+  }
+  return cls;
+}
+
 function render() {
   const main = document.getElementById("main");
   const isToday = selectedDate === new Date().toLocaleDateString("sv-SE");
@@ -358,8 +392,16 @@ function render() {
 
   const menus = r.menus.filter(m => m.date === selectedDate && m.items.length);
 
+  // 매일 바뀌는 코너는 위로, 상시(고정) 코너는 아래로 (그룹 내 순서는 유지)
+  const cls = classifyCorners(r);
+  const varying = menus.filter(m => cls[m.corner] !== "fixed");
+  const fixed = menus.filter(m => cls[m.corner] === "fixed");
+
   const body = menus.length
-    ? menus.map(m => cornerHtml(m, highlight)).join("")
+    ? varying.map(m => cornerHtml(m, highlight)).join("")
+      + (fixed.length
+        ? `<div class="section-label">상시 메뉴</div>` + fixed.map(m => cornerHtml(m, highlight)).join("")
+        : "")
     : `<div class="empty">이 날짜에는 ${name} 메뉴가 없어요.<br>주말이거나 휴점일 수 있어요 🌙</div>`;
 
   main.innerHTML = `
