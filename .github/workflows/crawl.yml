@@ -1,0 +1,37 @@
+name: 학식 메뉴 자동 크롤링
+
+on:
+  schedule:
+    # UTC 21:00 = 한국시간 새벽 6:00 (GitHub cron은 UTC 기준)
+    - cron: "0 21 * * *"
+  # Actions 탭에서 수동으로도 실행할 수 있게 (테스트용)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 크롤러 실행
+        run: python kmu_crawler.py
+
+      - name: 결과 커밋 & 푸시
+        run: |
+          git config user.name "menu-bot"
+          git config user.email "actions@github.com"
+          git add menus.json
+          git diff --staged --quiet || git commit -m "🍚 메뉴 자동 갱신 $(date +'%Y-%m-%d')"
+          git push
