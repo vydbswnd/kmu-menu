@@ -12,15 +12,23 @@
 """
 
 import json
+import os
 import re
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
 
 URL = "https://www.kookmin.ac.kr/user/unLvlh/lvlhSpor/todayMenu/index.do"
 MENUS_FILE = "menus.json"
+ARCHIVE_DIR = "archive"        # 월별 보관 파일 폴더 (archive/YYYY-MM.json)
+RECENT_DAYS = 21               # menus.json에 유지할 최근 기간(약 3주)
+
+
+def kst_today() -> date:
+    """GitHub Actions는 UTC로 도므로 KST(+9h) 기준 오늘 날짜를 계산."""
+    return (datetime.utcnow() + timedelta(hours=9)).date()
 
 # ── 정규식 패턴들 ──────────────────────────────────────────────
 # 메뉴가 아닌 공지/안내 문구를 걸러내는 패턴
@@ -253,6 +261,89 @@ def merge_restaurants(old_restaurants: list, new_restaurants: list) -> list:
     return result
 
 
+# ── 월별 아카이브 ──────────────────────────────────────────────
+
+def archive_path(ym: str) -> str:
+    return os.path.join(ARCHIVE_DIR, f"{ym}.json")
+
+
+def load_archive(ym: str) -> list:
+    """archive/YYYY-MM.json의 restaurants 리스트. 없거나 깨졌으면 빈 리스트."""
+    try:
+        with open(archive_path(ym), encoding="utf-8") as f:
+            return json.load(f).get("restaurants", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_archive(ym: str, restaurants: list) -> None:
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    data = {
+        "month": ym,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": URL,
+        "restaurants": restaurants,
+    }
+    with open(archive_path(ym), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def split_by_month(restaurants: list) -> dict:
+    """restaurants를 월(YYYY-MM)별로 나눈다. -> {ym: restaurants(해당 월 메뉴만)}"""
+    months = OrderedDict()
+    for r in restaurants:
+        by_ym = OrderedDict()
+        for m in r["menus"]:
+            by_ym.setdefault(m["date"][:7], []).append(m)
+        for ym, menus in by_ym.items():
+            months.setdefault(ym, []).append({"name": r["name"], "menus": menus})
+    return months
+
+
+def merge_into_archives(new_restaurants: list) -> list:
+    """이번 크롤 데이터를 월별 archive 파일에 병합 저장. 갱신된 월 목록 반환."""
+    touched = []
+    for ym, month_restaurants in split_by_month(new_restaurants).items():
+        merged = merge_restaurants(load_archive(ym), month_restaurants)
+        save_archive(ym, merged)
+        touched.append(ym)
+    return touched
+
+
+def rebuild_recent(today: date) -> list:
+    """archive들에서 최근 RECENT_DAYS일치를 추려 menus.json용 restaurants를 만든다."""
+    cutoff = today - timedelta(days=RECENT_DAYS)
+    # 최근 창(cutoff~오늘)이 걸치는 달들의 archive를 모아 병합
+    months = set()
+    d = cutoff
+    while d <= today:
+        months.add(d.strftime("%Y-%m"))
+        d += timedelta(days=1)
+    # 미래(다가오는 주) 데이터가 든 이번 달 archive도 포함
+    months.add(today.strftime("%Y-%m"))
+
+    merged = []
+    for ym in sorted(months):
+        merged = merge_restaurants(merged, load_archive(ym))
+
+    result = []
+    for r in merged:
+        menus = [m for m in r["menus"] if m["date"] >= cutoff.isoformat()]
+        if menus:
+            result.append({"name": r["name"], "menus": menus})
+    return result
+
+
+def write_menus(restaurants: list) -> None:
+    data = {
+        "fetched_at": datetime.now().isoformat(timespec="seconds"),
+        "source": URL,
+        "restaurants": restaurants,
+    }
+    with open(MENUS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def main():
     html = fetch_html()
     soup = BeautifulSoup(html, "html.parser")
@@ -263,22 +354,17 @@ def main():
         if parsed["menus"]:  # 메뉴가 하나도 없는 테이블은 제외
             new_restaurants.append(parsed)
 
-    # 기존 파일과 병합해 과거 날짜를 보존 (덮어쓰지 않음)
-    old_restaurants = load_existing_restaurants(MENUS_FILE)
-    restaurants = merge_restaurants(old_restaurants, new_restaurants)
+    # 1) 이번 크롤 데이터를 월별 archive에 병합 (과거 무손실 보존)
+    touched = merge_into_archives(new_restaurants)
 
-    data = {
-        "fetched_at": datetime.now().isoformat(timespec="seconds"),
-        "source": URL,
-        "restaurants": restaurants,
-    }
-
-    with open(MENUS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    # 2) archive에서 최근 3주치를 추려 menus.json 재생성 (첫 로딩용, 가볍게)
+    today = kst_today()
+    restaurants = rebuild_recent(today)
+    write_menus(restaurants)
 
     # 간단 요약 출력
-    print(f"✅ 완료! 식당 {len(restaurants)}곳 저장 -> {MENUS_FILE} "
-          f"(이번 크롤 {len(new_restaurants)}곳)")
+    print(f"✅ 완료! 갱신 archive: {', '.join(touched) or '없음'}")
+    print(f"   menus.json: 식당 {len(restaurants)}곳 (최근 {RECENT_DAYS}일, 기준일 {today})")
     for r in restaurants:
         dates = sorted({m["date"] for m in r["menus"]})
         span = f"{dates[0]}~{dates[-1]}" if dates else "없음"
