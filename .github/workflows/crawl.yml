@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   crawl:
@@ -35,3 +36,26 @@ jobs:
           git add menus.json
           git diff --staged --quiet || git commit -m "🍚 메뉴 자동 갱신 $(date +'%Y-%m-%d')"
           git push
+
+      # 오늘 이후 메뉴 중 칼로리 미매칭이 있으면 이슈로 알림.
+      # continue-on-error로 이 단계가 실패해도 워크플로우는 성공 유지.
+      - name: 칼로리 미매칭 검사 & 이슈 알림
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(python calorie_check.py)
+          echo "칼로리 미매칭 고유 메뉴: ${COUNT}건"
+          if [ "$COUNT" -gt 0 ]; then
+            TITLE="칼로리 미매칭 메뉴"
+            # 같은 제목의 열린 이슈가 있으면 재사용(제목 정확 일치로 필터)
+            EXISTING=$(gh issue list --state open --limit 100 --json number,title \
+              --jq "map(select(.title==\"${TITLE}\")) | .[0].number // empty")
+            if [ -n "$EXISTING" ]; then
+              gh issue comment "$EXISTING" --body-file unmatched.md
+              echo "기존 이슈 #${EXISTING} 에 코멘트 추가"
+            else
+              gh issue create --title "$TITLE" --body-file unmatched.md
+              echo "새 이슈 생성"
+            fi
+          fi
