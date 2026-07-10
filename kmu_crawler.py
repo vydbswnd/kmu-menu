@@ -13,12 +13,14 @@
 
 import json
 import re
+from collections import OrderedDict
 from datetime import date, datetime
 
 import requests
 from bs4 import BeautifulSoup
 
 URL = "https://www.kookmin.ac.kr/user/unLvlh/lvlhSpor/todayMenu/index.do"
+MENUS_FILE = "menus.json"
 
 # ── 정규식 패턴들 ──────────────────────────────────────────────
 # 메뉴가 아닌 공지/안내 문구를 걸러내는 패턴
@@ -206,15 +208,64 @@ def parse_table(table) -> dict:
     return {"name": name, "menus": menus}
 
 
+def load_existing_restaurants(path: str) -> list:
+    """기존 menus.json을 읽어 restaurants 리스트를 반환. 없거나 깨졌으면 빈 리스트."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("restaurants", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _group(restaurants: list) -> "OrderedDict":
+    """restaurants -> {식당: {날짜: {코너: [블록,...]}}} (삽입 순서 보존)."""
+    grouped = OrderedDict()
+    for r in restaurants:
+        dates = grouped.setdefault(r["name"], OrderedDict())
+        for m in r["menus"]:
+            corners = dates.setdefault(m["date"], OrderedDict())
+            corners.setdefault(m["corner"], []).append(m)
+    return grouped
+
+
+def merge_restaurants(old_restaurants: list, new_restaurants: list) -> list:
+    """
+    (식당, 날짜, 코너) 기준으로 기존 데이터와 새 크롤을 병합한다.
+    - 같은 (날짜, 코너)를 다시 크롤링하면 새 데이터가 기존을 덮어씀 (새 데이터 우선).
+    - 새 크롤에 없는 과거 (날짜, 코너)는 그대로 보존.
+    출력은 날짜 오름차순, 코너는 삽입 순서(원본 표의 코너 순서)를 유지.
+    """
+    merged = _group(old_restaurants)  # 기존을 바탕으로
+    for name, dates in _group(new_restaurants).items():
+        m_dates = merged.setdefault(name, OrderedDict())
+        for dt, corners in dates.items():
+            m_corners = m_dates.setdefault(dt, OrderedDict())
+            for corner, blocks in corners.items():
+                m_corners[corner] = blocks  # 새 (날짜,코너)가 기존을 덮어씀
+
+    result = []
+    for name, dates in merged.items():
+        menus = []
+        for dt in sorted(dates):  # 날짜 오름차순
+            for blocks in dates[dt].values():  # 코너 삽입 순서 유지
+                menus.extend(blocks)
+        result.append({"name": name, "menus": menus})
+    return result
+
+
 def main():
     html = fetch_html()
     soup = BeautifulSoup(html, "html.parser")
 
-    restaurants = []
+    new_restaurants = []
     for table in soup.find_all("table"):
         parsed = parse_table(table)
         if parsed["menus"]:  # 메뉴가 하나도 없는 테이블은 제외
-            restaurants.append(parsed)
+            new_restaurants.append(parsed)
+
+    # 기존 파일과 병합해 과거 날짜를 보존 (덮어쓰지 않음)
+    old_restaurants = load_existing_restaurants(MENUS_FILE)
+    restaurants = merge_restaurants(old_restaurants, new_restaurants)
 
     data = {
         "fetched_at": datetime.now().isoformat(timespec="seconds"),
@@ -222,13 +273,16 @@ def main():
         "restaurants": restaurants,
     }
 
-    with open("menus.json", "w", encoding="utf-8") as f:
+    with open(MENUS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
     # 간단 요약 출력
-    print(f"✅ 완료! 식당 {len(restaurants)}곳 저장 -> menus.json")
+    print(f"✅ 완료! 식당 {len(restaurants)}곳 저장 -> {MENUS_FILE} "
+          f"(이번 크롤 {len(new_restaurants)}곳)")
     for r in restaurants:
-        print(f"  - {r['name']}: 메뉴 블록 {len(r['menus'])}개")
+        dates = sorted({m["date"] for m in r["menus"]})
+        span = f"{dates[0]}~{dates[-1]}" if dates else "없음"
+        print(f"  - {r['name']}: 메뉴 블록 {len(r['menus'])}개, 날짜 {len(dates)}일 ({span})")
 
 
 if __name__ == "__main__":
