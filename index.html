@@ -147,7 +147,9 @@
     border: 1px dashed rgba(255,255,255,0.5);
     opacity: 0.7;
   }
-  .day.off.active { opacity: 1; border-color: var(--navy); }
+  /* 선택된 휴무 탭: .day.off가 배경을 덮어쓰지 않도록 흰 배경·남색 글자 명시
+     (안 하면 남색 배경에 남색 글자가 되어 탭이 안 보임) */
+  .day.off.active { background: #fff; color: var(--navy); opacity: 1; border-color: var(--navy); }
   .off-label {
     display: block; margin-top: 2px;
     font-size: 10px; font-style: normal; opacity: 0.85;
