@@ -144,7 +144,7 @@
 
   .item {
     display: flex; align-items: baseline; justify-content: space-between;
-    gap: 12px; margin-top: 8px;
+    flex-wrap: wrap; gap: 2px 12px; margin-top: 8px;
   }
   .item .menu-name { font-size: 15px; line-height: 1.45; }
   .item .price {
@@ -152,6 +152,45 @@
     font-size: 14px; font-weight: 700; color: var(--navy);
     white-space: nowrap;
   }
+  /* 칼로리 추정치 (토글 켰을 때 메뉴명 아래) */
+  .item .kcal-est {
+    flex-basis: 100%;
+    font-size: 12px; color: var(--sub);
+  }
+
+  /* kcal 토글 스위치 (식당 헤더 오른쪽) */
+  .kcal-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: none; background: none; cursor: pointer;
+    padding: 4px 2px; font-family: inherit;
+  }
+  .kcal-cap { font-size: 12px; font-weight: 700; color: var(--sub); }
+  .kcal-toggle.on .kcal-cap { color: var(--navy); }
+  .kcal-track {
+    position: relative; width: 34px; height: 20px;
+    background: var(--line); border-radius: 20px; transition: background 0.15s;
+  }
+  .kcal-toggle.on .kcal-track { background: var(--navy); }
+  .kcal-thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; transition: left 0.15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  }
+  .kcal-toggle.on .kcal-thumb { left: 16px; }
+
+  /* 최초 안내 토스트 */
+  .kcal-toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 12px);
+    max-width: 90%; z-index: 50;
+    background: rgba(28,30,36,0.94); color: #fff;
+    padding: 11px 16px; border-radius: 999px;
+    font-size: 13px; line-height: 1.3; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    opacity: 0; transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+  }
+  .kcal-toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   .empty {
     text-align: center; color: var(--sub);
@@ -203,9 +242,14 @@
    같은 폴더의 menus.json을 읽는다 (크롤러가 만든 파일)
 ──────────────────────────────────────────────── */
 let DATA = null;
+let CAL = null;                  // calories.json (키워드→[min,max])
+let calOn = false;              // kcal 토글 상태
 let selectedDate = null;
 let selectedRestaurant = null;  // 선택된 식당 base 이름
 let DATE_SET = new Set();        // 데이터가 존재하는 날짜 집합
+
+const KCAL_KEY = "kmu-kcal-on";           // kcal 토글 저장
+const KCAL_NOTICE_KEY = "kmu-kcal-notice"; // 최초 안내 표시 여부
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_TAB_DAYS = 21;  // 탭에 노출할 최근 기간(약 3주)
@@ -239,6 +283,57 @@ function readLastRestaurant() {
   try { return localStorage.getItem(LS_KEY); } catch (e) { return null; }
 }
 
+// ── 칼로리 추정 ──
+function readKcalOn() {
+  try { return localStorage.getItem(KCAL_KEY) === "1"; } catch (e) { return false; }
+}
+// 메뉴명에 포함되는 키워드 중 '가장 긴' 것을 골라 [min,max] 반환 (없으면 null)
+function matchCalorie(name) {
+  if (!CAL) return null;
+  let best = null;
+  for (const k in CAL) {
+    if (k[0] === "_") continue;               // _comment 등 메타 키 제외
+    if (name.indexOf(k) >= 0 && (!best || k.length > best.k.length)) {
+      best = { k, v: CAL[k] };
+    }
+  }
+  return best ? best.v : null;
+}
+// 켜져 있고 매칭되면 추정 라인 HTML, 아니면 빈 문자열
+function kcalLine(name) {
+  if (!calOn) return "";
+  const v = matchCalorie(name);
+  return v ? `<div class="kcal-est">약 ${v[0]}~${v[1]}kcal · 추정</div>` : "";
+}
+
+function toggleKcal() {
+  calOn = !calOn;
+  try { localStorage.setItem(KCAL_KEY, calOn ? "1" : "0"); } catch (e) {}
+  // 처음 켤 때 한 번만 안내
+  if (calOn) {
+    let seen = false;
+    try { seen = localStorage.getItem(KCAL_NOTICE_KEY) === "1"; } catch (e) {}
+    if (!seen) {
+      try { localStorage.setItem(KCAL_NOTICE_KEY, "1"); } catch (e) {}
+      showKcalNotice();
+    }
+  }
+  render();
+}
+
+function showKcalNotice() {
+  const t = document.createElement("div");
+  t.className = "kcal-toast";
+  t.id = "kcalToast";
+  t.textContent = "일반적인 추정치로 실제와 다를 수 있어요";
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => {
+    t.classList.remove("show");
+    setTimeout(() => t.remove(), 300);
+  }, 3200);
+}
+
 // fromISO~toISO(포함) 사이 날짜를 하루 간격 연속 배열로 (한국은 DST 없어 안전)
 function continuousDates(fromISO, toISO) {
   const out = [];
@@ -259,10 +354,14 @@ function dateHasAnyData(dateISO) {
     r.menus.some(m => m.date === dateISO && m.items.length));
 }
 
-fetch("menus.json")
-  .then(res => res.json())
-  .then(data => {
-    DATA = data;
+Promise.all([
+  fetch("menus.json").then(res => res.json()),
+  // calories.json은 실패해도 앱이 동작하도록(칼로리만 비활성)
+  fetch("calories.json").then(res => res.json()).catch(() => ({}))
+])
+  .then(([menu, cal]) => {
+    DATA = menu;
+    CAL = cal;
     init();
   })
   .catch(() => {
@@ -360,6 +459,9 @@ function init() {
   });
   centerScroll(restsEl, restsEl.querySelector(".chip.active"));
 
+  // kcal 토글 상태 복원 (기본 꺼짐)
+  calOn = readKcalOn();
+
   render();
 }
 
@@ -396,6 +498,7 @@ function cornerHtml(m, highlight) {
     <div class="item">
       <span class="menu-name">${i.name}</span>
       ${i.price ? `<span class="price">${i.price.toLocaleString()}원</span>` : ""}
+      ${kcalLine(i.name)}
     </div>`).join("");
   return `
     <div class="corner">
@@ -474,14 +577,25 @@ function render() {
         : "")
     : `<div class="empty">이 날짜에는 ${name} 메뉴가 없어요.</div>`;
 
+  // 위치 · 코너 수를 한 줄로 합침 (예: "복지관 1층 · 6개 코너")
+  const countText = menus.length ? `${menus.length}개 코너` : "";
+  const subParts = [];
+  if (loc) subParts.push(`📍 ${loc}`);
+  if (countText) subParts.push(countText);
+  const sub = subParts.join(" · ");
+
   main.innerHTML = `
     <section class="restaurant">
       <div class="head">
         <span>
           <div class="name">${name}</div>
-          ${loc ? `<div class="loc">📍 ${loc}</div>` : ""}
+          ${sub ? `<div class="loc">${sub}</div>` : ""}
         </span>
-        ${menus.length ? `<span class="count">${menus.length}개 코너</span>` : ""}
+        <button class="kcal-toggle ${calOn ? "on" : ""}" onclick="toggleKcal()"
+                role="switch" aria-checked="${calOn}" aria-label="칼로리 추정 표시">
+          <span class="kcal-cap">kcal</span>
+          <span class="kcal-track"><span class="kcal-thumb"></span></span>
+        </button>
       </div>
       <div class="body">${body}</div>
     </section>`;
