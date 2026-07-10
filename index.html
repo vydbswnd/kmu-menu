@@ -68,6 +68,17 @@
   .day.active { background: #fff; color: var(--navy); font-weight: 700; opacity: 1; }
   .day.today-mark b::after { content: " ·오늘"; font-size: 10px; color: #d97706; }
   .day.active.today-mark b::after { color: #b45309; }
+  /* 데이터 없는 주말 = 휴무: 점선 테두리 + '휴무' 라벨 */
+  .day.off {
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,0.5);
+    opacity: 0.7;
+  }
+  .day.off.active { opacity: 1; border-color: var(--navy); }
+  .off-label {
+    display: block; margin-top: 2px;
+    font-size: 10px; font-style: normal; opacity: 0.85;
+  }
 
   /* ── 식당 탭 (칩) ── */
   .rests {
@@ -149,6 +160,9 @@
   .empty .state-title {
     font-size: 18px; font-weight: 700; color: var(--ink);
     margin-bottom: 8px;
+  }
+  .empty .state-note {
+    margin-top: 16px; font-size: 13px; color: var(--sub);
   }
   footer {
     max-width: 640px; margin: 0 auto; padding: 0 16px 40px;
@@ -274,7 +288,12 @@ function init() {
   // 데이터 최소~최대(+오늘)까지 빈 날 없이 연속 달력으로 채움 (미래 포함)
   const lower = allDates.length ? allDates[0] : today;
   const dataMax = allDates.length ? allDates[allDates.length - 1] : today;
-  const upper = today > dataMax ? today : dataMax;
+  // 탭 끝 = '데이터 최대 날짜'와 '이번 주(일~토) 토요일' 중 더 나중
+  // (금요일에 봐도 다가오는 토요일이 미리 보이게)
+  const dow = new Date(today + "T00:00:00").getDay();          // 0=일 … 6=토
+  const satMs = new Date(today + "T00:00:00").getTime() + ((6 - dow + 7) % 7) * 86400000;
+  const thisSaturday = new Date(satMs).toLocaleDateString("sv-SE");
+  const upper = dataMax >= thisSaturday ? dataMax : thisSaturday;
   const full = continuousDates(lower, upper);
 
   // 과거가 쌓여도 탭이 길어지지 않게 최근 약 3주치만 노출 (미래는 유지)
@@ -296,9 +315,11 @@ function init() {
     const dt = new Date(d + "T00:00:00");
     const isToday = d === today;
     const isPast = d < today;  // 지난 날짜는 흐리게 표시
-    return `<button class="day ${d === selectedDate ? "active" : ""} ${isToday ? "today-mark" : ""} ${isPast ? "past" : ""}"
+    const isOff = isWeekend(d) && !DATE_SET.has(d);  // 데이터 없는 주말 = 휴무
+    return `<button class="day ${d === selectedDate ? "active" : ""} ${isToday ? "today-mark" : ""} ${isPast ? "past" : ""} ${isOff ? "off" : ""}"
               data-date="${d}">
               <b>${WEEKDAYS[dt.getDay()]}</b>${dt.getMonth() + 1}/${dt.getDate()}
+              ${isOff ? `<em class="off-label">휴무</em>` : ""}
             </button>`;
   }).join("");
 
@@ -421,6 +442,7 @@ function render() {
       ? `<div class="empty">
            <div class="state-title">주말 휴무</div>
            이번 주말은 학식 운영이 없어요.<br>평일에 다시 확인해 주세요.
+           <div class="state-note">월요일 메뉴는 일요일 아침에 업데이트됩니다.</div>
          </div>`
       : `<div class="empty">
            <div class="state-title">메뉴 정보 없음</div>
