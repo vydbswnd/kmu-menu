@@ -586,7 +586,7 @@ function init() {
   // 업데이트 시각 표시 (fetched_at은 KST(+09:00) 저장 → KST 벽시계로 표시)
   const k = toKst(new Date(DATA.fetched_at));
   document.getElementById("updated").textContent =
-    `업데이트 ${k.getUTCMonth() + 1}/${k.getUTCDate()} ${String(k.getUTCHours()).padStart(2, "0")}:${String(k.getUTCMinutes()).padStart(2, "0")}`;
+    `최근 업데이트 ${k.getUTCMonth() + 1}/${k.getUTCDate()} ${String(k.getUTCHours()).padStart(2, "0")}:${String(k.getUTCMinutes()).padStart(2, "0")}`;
 
   // 정상(최근 3주) 날짜 탭
   normalDates = dates;
