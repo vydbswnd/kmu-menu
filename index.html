@@ -499,13 +499,35 @@ function kstNow() {                    // KST 기준 {min: 자정부터 분, dow
   const d = toKst(new Date());
   return { min: d.getUTCHours() * 60 + d.getUTCMinutes(), dow: d.getUTCDay() };
 }
-// true=운영 중, false=운영 종료, null=판정 불가(범위 추출 실패 또는 주말 오판 회피)
+// hours를 '평일용/주말용/공통' 섹션으로 나눠 각 시간 범위를 모은다.
+// ◇/※ 헤더에 '주말'이 있으면 주말 섹션, '평일'이면 평일 섹션, 아니면 공통.
+function sectionRanges(hours) {
+  const out = { weekend: [], weekday: [], general: [] };
+  let cur = "general";
+  (hours || []).forEach(line => {
+    const t = line.trim();
+    if (/주말/.test(t)) cur = "weekend";
+    else if (/평일/.test(t)) cur = "weekday";
+    out[cur].push(...parseRangesFromHours([t]));
+  });
+  return out;
+}
+// true=운영 중, false=운영 종료, null=판정 불가
 function isOpenNow(restaurant) {
-  const ranges = parseRangesFromHours(restaurant && restaurant.hours);
-  if (!ranges.length) return null;    // 범위를 못 뽑으면 억지 판정하지 않음
+  const hours = restaurant && restaurant.hours;
+  if (!hours || !hours.length) return null;
   const now = kstNow();
-  // 주말엔 교내 식당 대부분 휴무 → 틀린 '운영 중'을 피하려 생활관 외에는 배지 생략
-  if ((now.dow === 0 || now.dow === 6) && !(restaurant.name || "").includes("생활관")) return null;
+  const sec = sectionRanges(hours);
+  // 오늘(요일)에 맞는 섹션 선택
+  let ranges;
+  if (now.dow === 0 || now.dow === 6) {
+    // 주말: 주말 섹션이 있으면 그걸로 판정, 없으면 주말 운영 정보가 없는 것 → 판정 불가
+    ranges = sec.weekend.length ? sec.weekend : null;
+  } else {
+    // 평일: 평일 섹션 우선, 없으면 공통 섹션
+    ranges = sec.weekday.length ? sec.weekday : (sec.general.length ? sec.general : null);
+  }
+  if (!ranges || !ranges.length) return null;   // 애매하면 배지 생략(억지 판정 X)
   return ranges.some(r => now.min >= r[0] && now.min < r[1]);
 }
 // 운영시간을 섹션(◇/※ 헤더)별로 줄바꿈해 표시. 3줄 초과면 접고 '더보기'로 펼침.
