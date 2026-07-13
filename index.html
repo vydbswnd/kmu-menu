@@ -49,6 +49,7 @@
     width: 44px; height: 44px; font-size: 20px; cursor: pointer;
   }
   .menu-btn:hover { background: rgba(255,255,255,0.24); }
+  .menu-btn svg { width: 22px; height: 22px; display: block; }
   h1 {
     font-family: 'Black Han Sans', Pretendard, sans-serif;
     font-size: 26px; font-weight: 400; letter-spacing: 0.5px;
@@ -475,8 +476,19 @@
       <div class="updated" id="updated">불러오는 중…</div>
     </div>
     <div class="head-actions">
-      <button id="shareBtn" class="menu-btn" aria-label="공유하기">📤</button>
-      <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기">☰</button>
+      <button id="shareBtn" class="menu-btn" aria-label="공유하기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>
+        </svg>
+      </button>
+      <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+        </svg>
+      </button>
     </div>
   </div>
 </header>
