@@ -65,6 +65,7 @@
     box-shadow: 0 2px 8px rgba(15,43,91,0.25);
   }
   .days-row {
+    position: relative;
     max-width: 640px; margin: 0 auto;
     display: flex; align-items: stretch; gap: 6px;
   }
@@ -74,6 +75,12 @@
     scrollbar-width: none;
   }
   .days::-webkit-scrollbar { display: none; }
+  /* 가로 스크롤 힌트: 오른쪽 끝을 남색으로 페이드 (더 있음을 암시) */
+  .days-row::after {
+    content: ""; position: absolute; top: 0; bottom: 0; right: 0;
+    width: 28px; pointer-events: none;
+    background: linear-gradient(to right, rgba(15,43,91,0), var(--navy));
+  }
   /* 오늘로 돌아가기 */
   .back-today {
     display: flex; align-items: center; justify-content: center;
@@ -284,12 +291,21 @@
   }
 
   /* ── 식당 탭 (칩) ── */
-  .rests {
+  .rests-wrap {
+    position: relative;
     max-width: 640px; margin: 8px auto 0;
+  }
+  .rests {
     display: flex; gap: 6px; overflow-x: auto;
     scrollbar-width: none;
   }
   .rests::-webkit-scrollbar { display: none; }
+  /* 가로 스크롤 힌트: 오른쪽 끝 페이드 */
+  .rests-wrap::after {
+    content: ""; position: absolute; top: 0; bottom: 0; right: 0;
+    width: 28px; pointer-events: none;
+    background: linear-gradient(to right, rgba(15,43,91,0), var(--navy));
+  }
   .chip {
     flex: 0 0 auto; border: none; border-radius: 999px;
     display: inline-flex; align-items: center; min-height: 44px;
@@ -497,7 +513,9 @@
   <div class="days-row">
     <div class="days" id="days"></div>
   </div>
-  <div class="rests" id="rests"></div>
+  <div class="rests-wrap" id="restsWrap">
+    <div class="rests" id="rests"></div>
+  </div>
   <button id="backToday" class="back-today" hidden>← 오늘로 돌아가기</button>
 </nav>
 
