@@ -43,9 +43,10 @@
   .head-actions { flex: 0 0 auto; display: flex; gap: 8px; }
   .menu-btn {
     flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
     border: none; border-radius: 10px;
     background: rgba(255,255,255,0.14); color: #fff;
-    width: 40px; height: 40px; font-size: 20px; cursor: pointer;
+    width: 44px; height: 44px; font-size: 20px; cursor: pointer;
   }
   .menu-btn:hover { background: rgba(255,255,255,0.24); }
   h1 {
@@ -74,10 +75,11 @@
   .days::-webkit-scrollbar { display: none; }
   /* 오늘로 돌아가기 */
   .back-today {
-    display: block; margin: 8px auto 0;
+    display: flex; align-items: center; justify-content: center;
+    width: fit-content; min-height: 40px; margin: 8px auto 0;
     border: 1px solid rgba(255,255,255,0.4); border-radius: 999px;
     background: rgba(255,255,255,0.1); color: #fff;
-    padding: 5px 14px; font-family: inherit; font-size: 12px; cursor: pointer;
+    padding: 0 16px; font-family: inherit; font-size: 12px; cursor: pointer;
   }
   .back-today[hidden] { display: none; }
 
@@ -103,7 +105,10 @@
   .drawer-title { font-size: 16px; font-weight: 700; }
   .drawer-close {
     border: none; background: none; color: #fff; font-size: 20px;
-    cursor: pointer; line-height: 1; padding: 4px;
+    cursor: pointer; line-height: 1; padding: 0;
+    width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    margin: -6px -10px -6px 0;   /* 큰 탭영역이 헤더 여백을 밀지 않게 */
   }
   .drawer-nav { padding: 6px 0 24px; }
   .drawer-item {
@@ -148,7 +153,10 @@
   .sheet-title { font-size: 16px; font-weight: 700; }
   .sheet-close {
     border: none; background: none; color: var(--sub); font-size: 20px;
-    cursor: pointer; line-height: 1; padding: 4px;
+    cursor: pointer; line-height: 1; padding: 0;
+    width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    margin: -8px -10px -8px 0;   /* 큰 탭영역이 헤더 여백을 밀지 않게 */
   }
   .sheet-list { padding: 4px 12px 12px; }
   /* 식당 행: 테두리·강조는 행 컨테이너가 담당(안에 끼니 펼침이 들어감) */
@@ -185,9 +193,10 @@
   .meal-solo .meal-choices { padding: 6px 4px 8px; }
   .meal-btn {
     flex: 0 0 auto;
+    display: inline-flex; align-items: center; min-height: 44px;
     border: 1px solid var(--line); border-radius: 999px;
     background: var(--card); color: var(--ink);
-    padding: 9px 18px; font-family: inherit; font-size: 14px; font-weight: 700;
+    padding: 0 18px; font-family: inherit; font-size: 14px; font-weight: 700;
     cursor: pointer;
   }
   .meal-btn:hover { background: var(--bg); }
@@ -213,7 +222,8 @@
   }
   .cal-title { font-size: 16px; font-weight: 700; color: var(--ink); }
   .cal-nav {
-    width: 36px; height: 36px; border: none; border-radius: 10px;
+    width: 44px; height: 44px; border: none; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
     background: var(--navy-soft); color: var(--navy);
     font-size: 20px; cursor: pointer;
   }
@@ -281,8 +291,9 @@
   .rests::-webkit-scrollbar { display: none; }
   .chip {
     flex: 0 0 auto; border: none; border-radius: 999px;
+    display: inline-flex; align-items: center; min-height: 44px;
     background: rgba(255,255,255,0.12); color: #fff;
-    padding: 7px 14px; cursor: pointer;
+    padding: 0 16px; cursor: pointer;
     font-family: inherit; font-size: 13px; font-weight: 600;
     white-space: nowrap; line-height: 1.2;
   }
@@ -380,6 +391,7 @@
   /* kcal 토글 스위치 (식당 헤더 오른쪽) */
   .kcal-toggle {
     display: inline-flex; align-items: center; gap: 6px;
+    min-height: 44px;
     border: none; background: none; cursor: pointer;
     padding: 4px 2px; font-family: inherit;
   }
