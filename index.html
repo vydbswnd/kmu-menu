@@ -1103,7 +1103,11 @@ function mainDish(name) {
   s = s.replace(/^\[[^\]]*\]\s*/, "");   // 앞의 [특선/홍보] 라벨 제거
   s = s.replace(/^T\/O\s+/i, "");        // 앞의 'T/O' 표식 제거
   const parts = s.split(/\s+/);
-  return parts.length >= 4 ? parts[0] : s;   // 4토막 이상 = 세트 → 주메뉴만
+  if (parts.length < 4) return s;            // 단품/요리명은 그대로
+  let dish = parts[0];                       // 4토막 이상 = 세트 → 주메뉴만
+  // 첫 토막이 조사(와/과/&)로 끝나면 이름이 잘린 것 → 다음 토막까지 붙임
+  if (/[와과&]$/.test(dish) && parts[1]) dish += " " + parts[1];
+  return dish;
 }
 
 // 특정 식당·끼니 기준 공유 텍스트. 해당 메뉴가 없으면 null.

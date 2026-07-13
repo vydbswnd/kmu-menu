@@ -80,6 +80,10 @@ HOURS_PAT = re.compile(
 # 최종 안전망: 완성된 이름이 공지처럼 보이면 버림 (가격 없는 경우에만)
 JUNK_NAME_PAT = re.compile(r"(안내|방학|평일|주말|요일|휴무|휴점|운영|공휴일)")
 
+# 한 글자짜리 한글 자모(ㅂ, ㅅ 등)만 남은 파편. 원본이 가격 뒤에 오타처럼 붙이거나
+# (예: '￦4900ㅂ') 빈 줄 대용으로 넣어 두는 경우가 있어, 메뉴명에 섞이지 않게 버린다.
+JAMO_JUNK_PAT = re.compile(r"^[ㄱ-ㅣ]+$")
+
 
 def fetch_html() -> str:
     headers = {
@@ -169,6 +173,9 @@ def parse_cell(lines: list, default_meal, hours_sink=None):
         line = re.sub(r"<[^>]*>", " ", line).strip()
         if not line:
             continue
+        # 자모 파편(ㅂ 등)만 있는 줄은 버림
+        if JAMO_JUNK_PAT.match(line):
+            continue
 
         # 끼니 태그를 만나면 이전 끼니 마무리
         tag_match = MEAL_TAG.search(line)
@@ -183,8 +190,9 @@ def parse_cell(lines: list, default_meal, hours_sink=None):
         # 같은 줄에 ￦가격이 붙은 경우: "김말이떡볶이￦3300" 또는 "비빔막국수 ￦3300"
         won = PRICE_WON.search(line)
         if won:
+            # 가격을 떼고 남은 조각. '￦4900ㅂ'처럼 자모 파편만 남으면 버린다.
             name_part = PRICE_WON.sub("", line).strip()
-            if name_part:
+            if name_part and not JAMO_JUNK_PAT.match(name_part):
                 name_buffer.append(name_part)
             flush_item(int(won.group(1).replace(",", "")))
             continue
