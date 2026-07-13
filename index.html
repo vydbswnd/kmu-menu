@@ -1094,6 +1094,18 @@ function bypassMealOf(r, dateISO) {
   return null;                                                  // 끼니 선택 필요
 }
 
+// 대표 메뉴명만 추리기: 학식 세트는 "주메뉴 쌀밥 반찬 반찬 …"처럼 구성품이
+// 공백으로 이어붙어 있어 첫 토막만 남긴다. 단, 2~3토막짜리(단품/식당 요리명,
+// 예: "직화 낙지 덮밥")는 이름 자체일 수 있으므로 그대로 둔다.
+// 앞의 [홍보문구]·'T/O'(테이크아웃) 표식은 먼저 떼어낸다.
+function mainDish(name) {
+  let s = (name || "").trim();
+  s = s.replace(/^\[[^\]]*\]\s*/, "");   // 앞의 [특선/홍보] 라벨 제거
+  s = s.replace(/^T\/O\s+/i, "");        // 앞의 'T/O' 표식 제거
+  const parts = s.split(/\s+/);
+  return parts.length >= 4 ? parts[0] : s;   // 4토막 이상 = 세트 → 주메뉴만
+}
+
 // 특정 식당·끼니 기준 공유 텍스트. 해당 메뉴가 없으면 null.
 function buildShareText(restName, meal) {
   const dateISO = selectedDate;
@@ -1109,7 +1121,7 @@ function buildShareText(restName, meal) {
   const isToday = dateISO === kstTodayISO();
   // 특정 끼니면 끼니명, '전체'면 끼니 표기 생략(오늘이면 '오늘 메뉴')
   const label = (meal && meal !== "전체") ? meal : (isToday ? "오늘 메뉴" : "메뉴");
-  const header = `🍚 [${baseName(r.name)}] ${label} (${md} ${dow})`;
+  const header = `🍚 ${baseName(r.name)} ${label} (${md} ${dow})`;
   const footer = `다른 메뉴도 → ${SHARE_URL}`;
   const MAX = 500;
 
@@ -1124,8 +1136,9 @@ function buildShareText(restName, meal) {
     const item = m.items.find(i => i.price) || m.items[0];  // 대표메뉴 = 첫 유가 항목
     if (!item) continue;
     const price = item.price ? ` ${item.price.toLocaleString()}원` : "";
-    const corner = m.corner ? `${m.corner} ` : "";
-    const line = `${corner}${item.name}${price}`;
+    const dish = mainDish(item.name);                       // 세트 구성품 생략
+    // 형식: "코너명 · 대표메뉴 가격" (코너명 없으면 메뉴만)
+    const line = m.corner ? `${m.corner} · ${dish}${price}` : `${dish}${price}`;
     if (used + line.length + 1 > MAX) break;       // 500자 넘으면 멈춤
     bodyLines.push(line);
     used += line.length + 1;
@@ -1255,7 +1268,8 @@ async function shareRestaurant(restName, meal) {
   if (!text) { showToast("이 날은 공유할 메뉴가 없어요"); return; }
 
   if (navigator.share) {
-    try { await navigator.share({ title: `${restName} 메뉴`, text }); }
+    // title은 넘기지 않는다: 카톡 등에서 title이 본문 앞에 중복으로 붙어 나옴
+    try { await navigator.share({ text }); }
     catch (e) { /* 사용자가 취소했거나 미지원 → 조용히 무시 */ }
     return;
   }
