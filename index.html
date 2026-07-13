@@ -40,6 +40,7 @@
     display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   }
   .head-text { min-width: 0; }
+  .head-actions { flex: 0 0 auto; display: flex; gap: 8px; }
   .menu-btn {
     flex: 0 0 auto;
     border: none; border-radius: 10px;
@@ -371,7 +372,10 @@
       <h1><span class="bowl">🍚</span> 국민대 오늘의 학식</h1>
       <div class="updated" id="updated">불러오는 중…</div>
     </div>
-    <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기">☰</button>
+    <div class="head-actions">
+      <button id="shareBtn" class="menu-btn" aria-label="공유하기">📤</button>
+      <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기">☰</button>
+    </div>
   </div>
 </header>
 
@@ -399,6 +403,7 @@
           <p>지난 주 메뉴는 <b>지난 메뉴 보기</b>(달력)에서 날짜를 눌러 확인할 수 있어요.</p>
           <p>데이터 출처: 국민대학교 ‘오늘의 메뉴’ 페이지. 매일 새벽 자동 갱신 · <span id="helpUpdated">—</span></p>
           <p>표시되는 <b>칼로리</b>와 <b>메뉴</b>는 추정·참고용이라 실제 운영과 다를 수 있어요.</p>
+          <p>문의: <a href="mailto:teambuildtwenty@gmail.com">teambuildtwenty@gmail.com</a></p>
         </div>
       </details>
 
@@ -474,17 +479,19 @@ function baseName(fullName) {
   return (m ? m[1] : fullName).trim();
 }
 
-// 고정 순서대로 정렬된 식당 목록
-function orderedRestaurants() {
+// 임의의 식당 목록을 고정 순서(이용자 많은 순)로 정렬
+function orderBy(list) {
   const rank = n => {
     const i = RESTAURANT_ORDER.indexOf(baseName(n));
     return i < 0 ? RESTAURANT_ORDER.length : i;  // 목록에 없으면 맨 뒤
   };
-  return DATA.restaurants
+  return list
     .map((r, i) => [r, i])
     .sort((a, b) => rank(a[0].name) - rank(b[0].name) || a[1] - b[1])
     .map(pair => pair[0]);
 }
+// 고정 순서대로 정렬된 식당 목록(menus.json 기준)
+function orderedRestaurants() { return orderBy(DATA.restaurants); }
 
 function saveLastRestaurant(name) {
   try { localStorage.setItem(LS_KEY, name); } catch (e) {}
@@ -531,17 +538,21 @@ function toggleKcal() {
   render();
 }
 
-function showKcalNotice() {
+// 화면 하단에 잠깐 떠오르는 안내 토스트 (여러 곳에서 재사용)
+function showToast(msg, dur) {
   const t = document.createElement("div");
   t.className = "kcal-toast";
-  t.id = "kcalToast";
-  t.textContent = "일반적인 추정치로 실제와 다를 수 있어요";
+  t.textContent = msg;
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add("show"));
   setTimeout(() => {
     t.classList.remove("show");
     setTimeout(() => t.remove(), 300);
-  }, 3200);
+  }, dur || 2400);
+}
+
+function showKcalNotice() {
+  showToast("일반적인 추정치로 실제와 다를 수 있어요", 3200);
 }
 
 // ── KST(UTC+9, DST 없음) 시간 헬퍼 ──
@@ -808,6 +819,7 @@ function setupCalendar() {
 
 /* ── 햄버거 사이드 서랍 ── */
 function setupDrawer() {
+  document.getElementById("shareBtn").addEventListener("click", shareMenu);
   document.getElementById("menuBtn").addEventListener("click", openDrawer);
   document.getElementById("drawerClose").addEventListener("click", closeDrawer);
   const ov = document.getElementById("drawerOverlay");
@@ -959,6 +971,85 @@ function classifyCorners(restaurant) {
     cls[corner] = (vals.length >= 2 && new Set(vals).size === 1) ? "fixed" : "varying";
   }
   return cls;
+}
+
+/* ────────────────────────────────────────────────
+   공유하기: 선택된 날짜의 메뉴를 짧은 텍스트로
+──────────────────────────────────────────────── */
+const SHARE_URL = "https://buildtwenty.github.io/kmu-menu";
+
+// 공유 텍스트를 만든다. 공유할 메뉴가 없으면 null.
+function buildShareText() {
+  const dateISO = selectedDate;
+  if (!dateHasAnyData(dateISO)) return null;
+
+  const dt = new Date(dateISO + "T00:00:00Z");
+  const md = `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`;
+  const dow = WEEKDAYS[dt.getUTCDay()];
+  const isToday = dateISO === kstTodayISO();
+  // 오늘이면 '오늘의 학식', 아니면 날짜만 붙인 '학식'
+  const header = isToday
+    ? `🍚 국민대 오늘의 학식 (${md} ${dow})`
+    : `🍚 국민대 학식 (${md} ${dow})`;
+  const footer = `전체 보기 → ${SHARE_URL}`;
+  const MAX = 500;
+
+  const ordered = orderBy(restaurantsForDate(dateISO));
+  const bodyLines = [];
+  // 헤더/푸터와 그 사이 빈 줄(\n\n … \n\n)을 뺀 나머지가 식당 줄 예산
+  let used = header.length + footer.length + 4;
+  for (const r of ordered) {
+    const menus = r.menus.filter(m => m.date === dateISO && m.items.length);
+    if (!menus.length) continue;
+    // 매일 바뀌는 코너를 앞에 두고 상시(고정) 코너는 뒤로
+    const cls = classifyCorners(r);
+    const sorted = [...menus].sort((a, b) =>
+      (cls[a.corner] === "fixed") - (cls[b.corner] === "fixed"));
+    const parts = [];
+    for (const m of sorted.slice(0, 3)) {              // 주요 코너 2~3개
+      const item = m.items.find(i => i.price) || m.items[0];  // 대표메뉴 = 첫 유가 항목
+      if (!item) continue;
+      const price = item.price ? ` ${item.price.toLocaleString()}원` : "";
+      const corner = m.corner ? `${m.corner} ` : "";
+      parts.push(`${corner}${item.name}${price}`);
+    }
+    if (!parts.length) continue;
+    const line = `[${baseName(r.name)}] ${parts.join(" · ")}`;
+    if (used + line.length + 1 > MAX) break;           // 500자 넘으면 여기서 멈춤
+    bodyLines.push(line);
+    used += line.length + 1;
+  }
+
+  if (!bodyLines.length) return null;
+  return `${header}\n\n${bodyLines.join("\n")}\n\n${footer}`;
+}
+
+// 공유 버튼: Web Share API 있으면 OS 공유창, 없으면 클립보드 복사 + 토스트
+async function shareMenu() {
+  const text = buildShareText();
+  if (!text) { showToast("이 날은 공유할 메뉴가 없어요"); return; }
+
+  if (navigator.share) {
+    try { await navigator.share({ title: "국민대 오늘의 학식", text }); }
+    catch (e) { /* 사용자가 취소했거나 미지원 → 조용히 무시 */ }
+    return;
+  }
+  // PC 등 미지원 환경: 클립보드 복사
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("복사됐어요");
+  } catch (e) {
+    // 구형 브라우저 폴백
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); showToast("복사됐어요"); }
+    catch (e2) { showToast("복사에 실패했어요"); }
+    ta.remove();
+  }
 }
 
 function render() {
