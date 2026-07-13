@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 
 URL = "https://www.kookmin.ac.kr/user/unLvlh/lvlhSpor/todayMenu/index.do"
 MENUS_FILE = "menus.json"
+STATS_FILE = "crawl_stats.json"  # 이번 크롤의 '새로 긁어온' 결과 요약 (이상 감지용, 커밋 안 함)
 ARCHIVE_DIR = "archive"        # 월별 보관 파일 폴더 (archive/YYYY-MM.json)
 RECENT_DAYS = 21               # menus.json에 유지할 최근 기간(약 3주)
 KST = ZoneInfo("Asia/Seoul")   # 서버가 어디서 돌든 한국시간으로 기록
@@ -451,6 +452,26 @@ def write_menus(restaurants: list) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def write_crawl_stats(new_restaurants: list, today: date) -> dict:
+    """이번 크롤에서 '새로 긁어온' 결과 요약을 crawl_stats.json으로 남긴다.
+    menus.json은 archive 백필이 있어 조용한 빈 크롤(페이지 개편 등)을 못 잡으므로,
+    워크플로우의 이상 감지는 이 신선한 값을 본다."""
+    future = sum(
+        1
+        for r in new_restaurants
+        for m in r["menus"]
+        if m["date"] >= today.isoformat() and m.get("items")
+    )
+    stats = {
+        "scraped_at": kst_stamp(),
+        "scraped_restaurants": len(new_restaurants),
+        "scraped_future_menus": future,
+    }
+    with open(STATS_FILE, "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+    return stats
+
+
 def main():
     html = fetch_html()
     soup = BeautifulSoup(html, "html.parser")
@@ -468,6 +489,11 @@ def main():
     today = kst_today()
     restaurants = rebuild_recent(today)
     write_menus(restaurants)
+
+    # 3) 이번에 '새로 긁어온' 결과 통계 저장 (워크플로우 이상 감지용)
+    stats = write_crawl_stats(new_restaurants, today)
+    print(f"🔎 신선 스크레이프: 식당 {stats['scraped_restaurants']}곳, "
+          f"오늘 이후 메뉴 {stats['scraped_future_menus']}건")
 
     # 간단 요약 출력
     print(f"✅ 완료! 갱신 archive: {', '.join(touched) or '없음'}")
