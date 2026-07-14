@@ -551,14 +551,14 @@
       <div class="updated" id="updated">불러오는 중…</div>
     </div>
     <div class="head-actions">
-      <button id="shareBtn" class="menu-btn" aria-label="공유하기">
+      <button id="shareBtn" class="menu-btn" aria-label="공유하기" aria-haspopup="dialog" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
           <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>
         </svg>
       </button>
-      <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기">
+      <button id="menuBtn" class="menu-btn" aria-label="메뉴 열기" aria-haspopup="menu" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" aria-hidden="true">
           <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
@@ -570,10 +570,10 @@
 
 <nav>
   <div class="days-row">
-    <div class="days" id="days"></div>
+    <div class="days" id="days" role="tablist" aria-label="날짜 선택"></div>
   </div>
   <div class="rests-wrap" id="restsWrap">
-    <div class="rests" id="rests"></div>
+    <div class="rests" id="rests" role="tablist" aria-label="식당 선택"></div>
   </div>
   <button id="backToday" class="back-today" hidden>← 오늘로 돌아가기</button>
 </nav>
@@ -623,7 +623,7 @@
 </div>
 
 <div id="calOverlay" class="cal-overlay" hidden>
-  <div class="cal-modal" role="dialog" aria-label="날짜 선택">
+  <div class="cal-modal" role="dialog" aria-label="날짜 선택" aria-modal="true">
     <div class="cal-head">
       <button class="cal-nav" id="calPrev" aria-label="이전 달">‹</button>
       <div class="cal-title" id="calTitle"></div>
@@ -769,6 +769,7 @@ function toggleKcal() {
 function showToast(msg, dur) {
   const t = document.createElement("div");
   t.className = "kcal-toast";
+  t.setAttribute("role", "status");
   t.textContent = msg;
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add("show"));
@@ -980,14 +981,18 @@ function init() {
   restsEl.innerHTML = ordered.map(r => {
     const n = baseName(r.name);
     const dot = (SHOW_HOURS && isOpenNow(r) === true) ? `<span class="chip-dot" title="운영 중"></span>` : "";
-    return `<button class="chip ${n === selectedRestaurant ? "active" : ""}" data-rest="${n}">${n}${dot}</button>`;
+    return `<button class="chip ${n === selectedRestaurant ? "active" : ""}" role="tab" aria-selected="${n === selectedRestaurant}" data-rest="${n}">${n}${dot}</button>`;
   }).join("");
 
   restsEl.querySelectorAll(".chip").forEach(btn => {
     btn.addEventListener("click", () => {
       selectedRestaurant = btn.dataset.rest;
       saveLastRestaurant(selectedRestaurant);
-      restsEl.querySelectorAll(".chip").forEach(b => b.classList.toggle("active", b === btn));
+      restsEl.querySelectorAll(".chip").forEach(b => {
+        const on = b === btn;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on);
+      });
       render();
     });
   });
@@ -1019,6 +1024,7 @@ function buildDayTabs(dates, dataDates) {
     const isPast = d < today;                            // 지난 날짜는 흐리게
     const isOff = isWeekend(d) && !dataDates.has(d);      // 데이터 없는 주말 = 휴무
     return `<button class="day ${d === selectedDate ? "active" : ""} ${isToday ? "today-mark" : ""} ${isPast ? "past" : ""} ${isOff ? "off" : ""}"
+              role="tab" aria-selected="${d === selectedDate}"
               data-date="${d}">
               <b>${WEEKDAYS[dt.getDay()]}</b>${dt.getMonth() + 1}/${dt.getDate()}
               ${isOff ? `<em class="off-label">휴무</em>` : ""}
@@ -1027,7 +1033,11 @@ function buildDayTabs(dates, dataDates) {
   daysEl.querySelectorAll(".day").forEach(btn => {
     btn.addEventListener("click", () => {
       selectedDate = btn.dataset.date;
-      daysEl.querySelectorAll(".day").forEach(b => b.classList.toggle("active", b === btn));
+      daysEl.querySelectorAll(".day").forEach(b => {
+        const on = b === btn;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on);
+      });
       render();
     });
   });
@@ -1067,10 +1077,12 @@ function openDrawer() {
   ov.hidden = false;
   void ov.offsetWidth;              // 강제 리플로우 → 슬라이드 인 트랜지션 발동
   ov.classList.add("open");
+  document.getElementById("menuBtn").setAttribute("aria-expanded", "true");
 }
 function closeDrawer() {
   const ov = document.getElementById("drawerOverlay");
   ov.classList.remove("open");
+  document.getElementById("menuBtn").setAttribute("aria-expanded", "false");
   setTimeout(() => { ov.hidden = true; }, 250);            // 슬라이드 아웃 후 숨김
 }
 
@@ -1327,7 +1339,7 @@ function mealButtonsHtml(r) {
   const nm = (selectedDate === kstTodayISO()) ? nextMeal() : null;
   const hl = (nm && opts.includes(nm)) ? nm : "전체";   // 다가오는 끼니, 없으면 전체
   return `<div class="meal-choices">` + opts.map(o =>
-    `<button class="meal-btn ${o === hl ? "hl" : ""}" data-rest="${n}" data-meal="${o}">${o}</button>`
+    `<button class="meal-btn ${o === hl ? "hl" : ""}" aria-pressed="${o === hl}" data-rest="${n}" data-meal="${o}">${o}</button>`
   ).join("") + `</div>`;
 }
 function bindMealButtons(container) {
@@ -1411,10 +1423,12 @@ function openSheet() {
   ov.hidden = false;
   void ov.offsetWidth;               // 리플로우 → 슬라이드 업 트랜지션
   ov.classList.add("open");
+  document.getElementById("shareBtn").setAttribute("aria-expanded", "true");
 }
 function closeSharePicker() {
   const ov = document.getElementById("shareOverlay");
   ov.classList.remove("open");
+  document.getElementById("shareBtn").setAttribute("aria-expanded", "false");
   setTimeout(() => { ov.hidden = true; }, 250);
 }
 
